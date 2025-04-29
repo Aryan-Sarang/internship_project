@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generated Graphs</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <h1>Generated Graphs</h1>
+    <div class="graphs-container">
+        {% for graph_url in graph_urls %}
+            <img src="{{ graph_url }}" alt="Graph" style="width: 100%; max-width: 800px; margin-bottom: 20px;">
+        {% endfor %}
+    </div>
+    <button class="home-btn" id="homeBtn">Back to Home</button>
+    <button class="toggle-dark-mode-btn" id="toggleDarkModeBtn">Toggle Dark Mode</button>
+
+    <script>
+        document.getElementById('homeBtn').addEventListener('click', () => {
+            window.location.href = '/';
+        });
+    </script>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

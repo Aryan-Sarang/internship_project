@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Upload and Analysis</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="{{ 'dark-mode' if request.cookies.get('darkMode') == 'true' else '' }}">
+    <div id="toast" class="toast hidden"></div>
+    <div class="loading-overlay hidden" id="loadingOverlay">
+        <div class="spinner"></div>
+    </div>
+    <div class="container" id="mainContainer">
+        <h1>File Upload and Analysis</h1>
+        <div class="drop-zone" id="dropZone">
+            <p>Drag and drop files here or click to upload</p>
+            <input type="file" id="fileInput" hidden>
+        </div>
+        <p id="fileNameDisplay" class="file-info-text"></p>
+        <button class="analyze-btn" id="analyzeBtn" disabled>Analyze</button>
+        <button class="home-btn" id="resetBtn">Reset</button>
+        <button class="toggle-dark-mode-btn" id="toggleDarkModeBtn">Toggle Dark Mode</button>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}?v=2"></script>
+</body>
+</html>

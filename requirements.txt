@@ -1,0 +1,9 @@
+flask
+
+
+1. display top 5 tokens with most no of orders
+2. display top 5 tokens with higest volume
+3. edit the ui to show one graph at a time but user can change what graph they want to see with the help of a dropdown menu or a navigation bar
+
+4. next graph is x axis pe we will have every unique token and on y axis we will have the total no of entries/quantity displayed
+   in a descending order 
