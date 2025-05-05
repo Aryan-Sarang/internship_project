@@ -191,4 +191,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         console.log('Carousel initialized with manual controls.');
     }
+
+    // Trigger Analysis on Enter Key
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+            if (selectedFile && !analyzeBtn.disabled) {
+                analyzeBtn.click(); // Simulate a click on the Analyze button
+            }
+        }
+    });
 });

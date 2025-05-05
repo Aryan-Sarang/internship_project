@@ -80,6 +80,78 @@ def delete_uploads():
         print(f"Error deleting files: {str(e)}")
         return jsonify({"success": False, "message": f"Error deleting files: {str(e)}"})
 
+@app.route("/api/graph-data", methods=["GET"])
+def get_graph_data():
+    try:
+        # Load the processed data from the latest uploaded file
+        file_path = None
+        for file in os.listdir(UPLOAD_FOLDER):
+            file_path = os.path.join(UPLOAD_FOLDER, file)
+            break
+
+        if not file_path or not os.path.exists(file_path):
+            return jsonify({"success": False, "message": "No uploaded file found."}), 404
+
+        # Process the file to extract data
+        adjusted_times, tokens, order_quantities, actions = [], [], [], []
+
+        with open(file_path, "r") as file:
+            for line_num, line in enumerate(file, 1):
+                columns = line.strip().split(",")
+                if len(columns) >= 8:  # Ensure there are enough columns
+                    try:
+                        raw_epoch_time = int(columns[5])  # 7th value (index 6)
+                        if raw_epoch_time > 1e18:
+                            epoch_time = (raw_epoch_time + 315532800000000000) / 1e9
+                        elif raw_epoch_time > 1e15:
+                            epoch_time = (raw_epoch_time + 315532800000000) / 1e6
+                        elif raw_epoch_time > 1e12:
+                            epoch_time = (raw_epoch_time + 315532800000) / 1e3
+                        else:
+                            epoch_time = raw_epoch_time + 315532800
+
+                        adjusted_time = pd.to_datetime(epoch_time, unit="s", origin="unix", utc=True)
+                        adjusted_time = adjusted_time.tz_convert("Asia/Calcutta")
+
+                        token = columns[1].strip()  # Token (2nd value, index 1)
+                        order_quantity = float(columns[-1])  # Quantity (last value)
+                        action = columns[0].strip()  # Action (1st value, index 0)
+
+                        adjusted_times.append(adjusted_time)
+                        tokens.append(token)
+                        order_quantities.append(order_quantity)
+                        actions.append(action)
+                    except (ValueError, IndexError):
+                        continue
+
+        # Create a DataFrame from the extracted data
+        df = pd.DataFrame({
+            "adjusted_time": adjusted_times,
+            "token": tokens,
+            "order_quantity": order_quantities,
+            "action": actions
+        })
+
+        # Drop rows with missing adjusted_time
+        df.dropna(subset=["adjusted_time"], inplace=True)
+
+        # Calculate total quantities for each token and sort in descending order
+        quantity_per_token = df.groupby("token")["order_quantity"].sum().sort_values(ascending=False)
+        sorted_top_tokens = quantity_per_token.head(5).to_dict()  # Get top 5 tokens by quantity
+
+        # Prepare data for JSON response
+        graph_data = {
+            "entries_per_hour": {str(k): v for k, v in df.groupby(df["adjusted_time"].dt.floor("H")).size().to_dict().items()},
+            "quantity_per_hour": {str(k): v for k, v in df.groupby(df["adjusted_time"].dt.floor("H"))["order_quantity"].sum().to_dict().items()},
+            "top_tokens_by_quantity": sorted_top_tokens,  # Use the sorted dictionary
+            "quantity_per_token": quantity_per_token.to_dict()
+        }
+
+        return jsonify({"success": True, "data": graph_data}), 200
+    except Exception as e:
+        print(f"Error in /api/graph-data: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
 def create_plot(df, x_data, y_data, title, xlabel, ylabel, filename, color='#1f77b4', marker='o', 
                 linewidth=2, label=None, legend_needed=False, more_series=None):
     """Thread-safe function to create a single plot and save it to disk with exact time labels"""
