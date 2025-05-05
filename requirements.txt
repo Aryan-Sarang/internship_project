@@ -7,3 +7,9 @@ flask
 
 4. next graph is x axis pe we will have every unique token and on y axis we will have the total no of entries/quantity displayed
    in a descending order 
+
+5. add some frontend stuff like carousels, navigation buttons in the carousels, add plotly instead of 
+   matplotlib
+
+6. make an api of our backend to fetch the data that we are displaying in the graphs but in json format
+   and then use that api in the frontend to display the data as text output(i think idk)

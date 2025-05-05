@@ -79,11 +79,12 @@ button:hover {
     background-color: #c19a6b;
 }
 
+/* Ensure the fixed buttons are above the carousel navigation buttons */
 .home-btn,
 .toggle-dark-mode-btn {
     position: fixed;
+    z-index: 1050; /* Ensure buttons are above other elements */
     right: 20px;
-    z-index: 1000;
     background-color: #d2b48c;
     color: #fff;
 }
@@ -197,4 +198,38 @@ button:hover {
     max-width: 850px;
     margin: 100px auto 60px auto;
     padding: 0 15px;
+}
+#carousel img {
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+#prevBtn, #nextBtn {
+    background-color: rgba(0, 0, 0, 0.5);
+    color: white;
+    border: none;
+    padding: 10px;
+    cursor: pointer;
+    font-size: 18px;
+    border-radius: 4px;
+    z-index: 1;
+}
+
+#prevBtn:hover, #nextBtn:hover {
+    background-color: rgba(0, 0, 0, 0.7);
+}
+
+/* Change the opacity of the carousel navigation buttons */
+.carousel-control-prev-icon,
+.carousel-control-next-icon {
+    background-color: rgba(0, 0, 0, 0.5); /* Semi-transparent black background */
+    border-radius: 50%; /* Make the buttons circular */
+    padding: 10px; /* Add padding for better visibility */
+}
+
+/* Change the hover effect for the buttons */
+.carousel-control-prev-icon:hover,
+.carousel-control-next-icon:hover {
+    background-color: rgba(0, 0, 0, 0.8); /* Darker background on hover */
+    transition: background-color 0.3s ease; /* Smooth transition */
 }

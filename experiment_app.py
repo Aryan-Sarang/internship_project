@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, redirect
+from flask import Flask, render_template, request, jsonify, redirect, url_for
 import os
 import pandas as pd
 import matplotlib
@@ -61,7 +61,7 @@ def show_graphs():
         graph_files = sorted(
             [f for f in os.listdir(GRAPH_FOLDER) if f.endswith(".png")]
         )
-        graph_urls = [os.path.join("static/graphs", f) for f in graph_files]
+        graph_urls = [url_for('static', filename=f'graphs/{f}') for f in graph_files]
         return render_template("graphs.html", graph_urls=graph_urls)
     except Exception as e:
         print(f"Error in /graphs route: {e}")
