@@ -66,23 +66,29 @@
     <script src="{{ url_for('static', filename='script.js') }}"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            // Fetch graph data from the API
             fetch('/api/graph-data')
                 .then(response => response.json())
                 .then(data => {
-                    if (data.success) {
-                        const graphDataOutput = document.getElementById('graphDataOutput');
-                        graphDataOutput.textContent = JSON.stringify(data.data, null, 2); // Pretty-print JSON
-                    } else {
-                        console.error('Error fetching graph data:', data.message);
-                        document.getElementById('graphDataOutput').textContent = 'Error loading graph data.';
+                    const graphDataOutput = document.getElementById('graphDataOutput');
+        
+                    if (!data.success) {
+                        graphDataOutput.textContent = 'Error loading graph data.';
+                        return;
                     }
+        
+                    const sortedTokens = Object.entries(data.data.quantity_per_token)
+                        .sort((a, b) => b[1] - a[1]);
+        
+                    // Clear and add custom HTML content
+                    graphDataOutput.innerHTML = "<strong>📊 Sorted Token Quantities:</strong><br><ol>" +
+                        sortedTokens.map(([token, qty]) => `<li>${token}: ${qty}</li>`).join('') +
+                        "</ol>";
                 })
                 .catch(error => {
                     console.error('Error fetching graph data:', error);
                     document.getElementById('graphDataOutput').textContent = 'Error loading graph data.';
                 });
         });
-    </script>
+        </script>            
 </body>
 </html>
