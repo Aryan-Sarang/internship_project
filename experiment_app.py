@@ -147,23 +147,19 @@ def get_graph_data():
         df["hour"] = df["adjusted_time"].dt.floor("H")
 
         entries_per_hour = (
-            df.groupby(df["adjusted_time"].dt.floor("H"))
+            df.groupby("hour")
             .size()
             .sort_index()
             .to_dict()
         )
+
         quantity_per_hour = (
-            df.groupby(df["adjusted_time"].dt.floor("H"))["order_quantity"]
+            df.groupby("hour")["order_quantity"]
             .sum()
             .sort_values(ascending=False)
             .to_dict()
         )
-        top_tokens_by_quantity = dict(
-            df.groupby("token")["order_quantity"]
-            .sum()
-            .sort_values(ascending=False)
-            .head(5)
-        )
+
         quantity_per_token = (
             df.groupby("token")["order_quantity"]
             .sum()
@@ -171,15 +167,19 @@ def get_graph_data():
             .to_dict()
         )
 
-        # Ensure sorting of JSON output explicitly by value descending
-        top_tokens_by_quantity_sorted = dict(sorted(top_tokens_by_quantity.items(), key=lambda x: x[1], reverse=True))
-        quantity_per_token_sorted = dict(sorted(quantity_per_token.items(), key=lambda x: x[1], reverse=True))
+        # 🆕 New logic: Count number of orders per token
+        token_counts = (
+            df["token"]
+            .value_counts()
+            .to_dict()
+        )
 
+        # Prepare response data
         graph_data = {
             "entries_per_hour": {str(k): v for k, v in entries_per_hour.items()},
             "quantity_per_hour": {str(k): v for k, v in quantity_per_hour.items()},
-            "top_tokens_by_quantity": top_tokens_by_quantity_sorted,
-            "quantity_per_token": quantity_per_token_sorted
+            "quantity_per_token": quantity_per_token,
+            "token_counts": token_counts  # ✅ Included new field
         }
 
         return jsonify({"success": True, "data": graph_data}), 200
@@ -187,7 +187,7 @@ def get_graph_data():
     except Exception as e:
         print(f"Error in /api/graph-data: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
-
+     
 
 def create_plot(df, x_data, y_data, title, xlabel, ylabel, filename, color='#1f77b4', marker='o', 
                 linewidth=2, label=None, legend_needed=False, more_series=None):

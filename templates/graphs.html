@@ -65,30 +65,100 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="{{ url_for('static', filename='script.js') }}"></script>
     <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            fetch('/api/graph-data')
-                .then(response => response.json())
-                .then(data => {
-                    const graphDataOutput = document.getElementById('graphDataOutput');
-        
-                    if (!data.success) {
-                        graphDataOutput.textContent = 'Error loading graph data.';
-                        return;
-                    }
-        
-                    const sortedTokens = Object.entries(data.data.quantity_per_token)
-                        .sort((a, b) => b[1] - a[1]);
-        
-                    // Clear and add custom HTML content
-                    graphDataOutput.innerHTML = "<strong>📊 Sorted Token Quantities:</strong><br><ol>" +
-                        sortedTokens.map(([token, qty]) => `<li>${token}: ${qty}</li>`).join('') +
-                        "</ol>";
-                })
-                .catch(error => {
-                    console.error('Error fetching graph data:', error);
-                    document.getElementById('graphDataOutput').textContent = 'Error loading graph data.';
-                });
+document.addEventListener('DOMContentLoaded', () => {
+    fetch('/api/graph-data')
+        .then(response => response.json())
+        .then(data => {
+            const graphDataOutput = document.getElementById('graphDataOutput');
+
+            if (!data.success) {
+                graphDataOutput.textContent = 'Error loading graph data.';
+                return;
+            }
+
+            const { quantity_per_token, token_counts, entries_per_hour, quantity_per_hour } = data.data;
+
+            // Combine token quantities and order counts
+            const combined = Object.keys(quantity_per_token).map(token => ({
+                token,
+                quantity: quantity_per_token[token],
+                count: token_counts[token] || 0
+            }));
+            const topTokens = combined.sort((a, b) => b.quantity - a.quantity || b.count - a.count).slice(0, 10);
+
+            // Summary
+            const totalOrders = Object.values(entries_per_hour).reduce((a, b) => a + b, 0);
+            const totalQuantity = Object.values(quantity_per_hour).reduce((a, b) => a + b, 0);
+
+            // Hour-wise rows
+            const hourRows = Object.keys(entries_per_hour)
+                .sort()
+                .map(hour => {
+                    const count = entries_per_hour[hour] || 0;
+                    const qty = quantity_per_hour[hour] || 0;
+                    return `
+                        <tr>
+                            <td style="border: 1px solid #ccc; padding: 8px;">${hour}</td>
+                            <td style="border: 1px solid #ccc; padding: 8px;">${count}</td>
+                            <td style="border: 1px solid #ccc; padding: 8px;">${qty.toFixed(2)}</td>
+                        </tr>`;
+                }).join('');
+
+            // Final HTML
+            graphDataOutput.innerHTML = `
+                <div style="text-align: center; margin-bottom: 30px;">
+                    <h3>📈 Summary</h3>
+                    <p><strong>Total Orders:</strong> ${totalOrders}</p>
+                    <p><strong>Total Quantity:</strong> ${totalQuantity.toFixed(2)}</p>
+                </div>
+
+                <div style="display: flex; justify-content: center; margin-bottom: 40px;">
+                    <div style="text-align: center;">
+                        <h4>📊 Top 10 Tokens by Quantity & Orders</h4>
+                        <table style="border-collapse: collapse; margin: auto;">
+                            <thead>
+                                <tr>
+                                    <th style="border: 1px solid #ccc; padding: 8px;">Token</th>
+                                    <th style="border: 1px solid #ccc; padding: 8px;">Total Quantity</th>
+                                    <th style="border: 1px solid #ccc; padding: 8px;">Order Count</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${topTokens.map(t => `
+                                    <tr>
+                                        <td style="border: 1px solid #ccc; padding: 8px;">${t.token}</td>
+                                        <td style="border: 1px solid #ccc; padding: 8px;">${t.quantity}</td>
+                                        <td style="border: 1px solid #ccc; padding: 8px;">${t.count}</td>
+                                    </tr>`).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: center;">
+                    <div>
+                        <h4 style="text-align: center;">🕒 Orders & Quantity Per Hour</h4>
+                        <table style="border-collapse: collapse; margin: auto;">
+                            <thead>
+                                <tr>
+                                    <th style="border: 1px solid #ccc; padding: 8px;">Hour</th>
+                                    <th style="border: 1px solid #ccc; padding: 8px;">Order Count</th>
+                                    <th style="border: 1px solid #ccc; padding: 8px;">Total Quantity</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${hourRows}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        })
+        .catch(error => {
+            console.error('Error fetching graph data:', error);
+            document.getElementById('graphDataOutput').textContent = 'Error loading graph data.';
         });
-        </script>            
+});
+</script>       
 </body>
 </html>
