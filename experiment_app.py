@@ -343,6 +343,10 @@ def process_file_and_generate_graphs(file_path):
     print("DataFrame After Adjusted Time Filtering:\n", df.head())  # Debug: Check DataFrame after filtering
     df["hour"] = df["adjusted_time"].dt.floor("H")
 
+    df["hour"] = pd.to_datetime(df["hour"], errors="coerce")
+    df["order_quantity"] = pd.to_numeric(df["order_quantity"], errors="coerce")
+    df.dropna(subset=["hour", "order_quantity"], inplace=True)
+
     entries_per_hour = df.groupby("hour").size()
     print("Entries Per Hour:\n", entries_per_hour)  # Debug: Print entries per hour
 
@@ -388,19 +392,35 @@ def process_file_and_generate_graphs(file_path):
         fig.write_html(os.path.join(GRAPH_FOLDER, "top_5_tokens_orders_per_hour.html"))
         fig.write_image(os.path.join(GRAPH_FOLDER, "top_5_tokens_orders_per_hour.png"))
 
-    # Graph 5: Top 5 Tokens by Quantity Traded per Hour
+    # Graph 5: Top 5 Tokens by Quantity Traded per Hour (with zeros for missing)
     top_5_qty_tokens = df.groupby("token")["order_quantity"].sum().nlargest(5).index.tolist()
-    print("Top 5 Tokens by Quantity:", top_5_qty_tokens)  # Debug: Check top 5 tokens
-
     df_top_qty = df[df["token"].isin(top_5_qty_tokens)]
-    print("DataFrame for Top 5 Tokens by Quantity:\n", df_top_qty.head())  # Debug: Check filtered DataFrame
 
-    if not df_top_qty.empty:
-        qty_per_hour = df_top_qty.groupby(["hour", "token"])["order_quantity"].sum().unstack(fill_value=0).sort_index()
-        fig = px.line(qty_per_hour, x=qty_per_hour.index, y=qty_per_hour.columns, title="Top 5 Tokens by Total Quantity Per Hour")
-        fig.update_layout(xaxis_title="Time", yaxis_title="Total Quantity")
-        fig.write_html(os.path.join(GRAPH_FOLDER, "top_5_tokens_quantity_per_hour.html"))
-        fig.write_image(os.path.join(GRAPH_FOLDER, "top_5_tokens_quantity_per_hour.png"))
+    # Get all unique hours in the dataset
+    all_hours = df["hour"].sort_values().unique()
+    # Build a MultiIndex of all hour/token combinations
+    multi_index = pd.MultiIndex.from_product([all_hours, top_5_qty_tokens], names=["hour", "token"])
+
+    # Group and reindex to fill missing hour/token combos with 0
+    qty_per_hour = (
+        df_top_qty.groupby(["hour", "token"])["order_quantity"].sum()
+        .reindex(multi_index, fill_value=0)
+        .unstack(fill_value=0)
+        .sort_index()
+    )
+
+    print("qty_per_hour shape:", qty_per_hour.shape)
+    print("qty_per_hour head:\n", qty_per_hour.head())
+
+    fig = px.line(
+        qty_per_hour,
+        x=qty_per_hour.index,
+        y=qty_per_hour.columns,
+        title="Top 5 Tokens by Total Quantity Per Hour"
+    )
+    fig.update_layout(xaxis_title="Time", yaxis_title="Total Quantity")
+    fig.write_html(os.path.join(GRAPH_FOLDER, "top_5_tokens_quantity_per_hour.html"))
+    fig.write_image(os.path.join(GRAPH_FOLDER, "top_5_tokens_quantity_per_hour.png"))
 
     # Graph 6: Pie Chart of Number of Entries for Each Unique Token
     entries_per_token = df["token"].value_counts()
