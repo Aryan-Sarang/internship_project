@@ -489,5 +489,72 @@ def process_file_and_generate_graphs(file_path):
 
     print(f"\n✅ File processing completed in {time.time() - start_time:.2f} seconds.")
 
+@app.route("/export-processed-data", methods=["GET"])
+def export_processed_data():
+    # Find the latest uploaded file
+    file_path = None
+    for file in os.listdir(UPLOAD_FOLDER):
+        file_path = os.path.join(UPLOAD_FOLDER, file)
+        break
+
+    if not file_path or not os.path.exists(file_path):
+        return "No processed data available.", 404
+
+    # Re-process the file to ensure it's clean (or load from where you save processed data)
+    adjusted_times, tokens, order_quantities, actions = [], [], [], []
+    with open(file_path, "r", encoding="utf-8", errors="replace") as file:
+        for line_num, line in enumerate(file, 1):
+            columns = line.strip().split(",")
+            if len(columns) < 8:
+                continue
+            try:
+                raw_epoch_time = int(columns[5])
+                if raw_epoch_time > 1e18:
+                    epoch_time = (raw_epoch_time + 315532800000000000) / 1e9
+                elif raw_epoch_time > 1e15:
+                    epoch_time = (raw_epoch_time + 315532800000000) / 1e6
+                elif raw_epoch_time > 1e12:
+                    epoch_time = (raw_epoch_time + 315532800000) / 1e3
+                else:
+                    epoch_time = raw_epoch_time + 315532800
+                adjusted_time = pd.to_datetime(epoch_time, unit="s", origin="unix", utc=True)
+                adjusted_time = adjusted_time.tz_convert("Asia/Calcutta")
+            except (ValueError, IndexError):
+                continue
+
+            token = columns[1].strip()
+            try:
+                order_quantity = float(columns[-1].strip())
+            except ValueError:
+                continue
+            action = columns[0].strip()
+
+            adjusted_times.append(adjusted_time)
+            tokens.append(token)
+            order_quantities.append(order_quantity)
+            actions.append(action)
+
+    df = pd.DataFrame({
+        "adjusted_time": adjusted_times,
+        "token": tokens,
+        "order_quantity": order_quantities,
+        "action": actions
+    })
+    df["hour"] = df["adjusted_time"].dt.floor("H")
+
+    # Export as CSV
+    from io import StringIO
+    csv_buffer = StringIO()
+    df.to_csv(csv_buffer, index=False)
+    csv_buffer.seek(0)
+    return (
+        csv_buffer.getvalue(),
+        200,
+        {
+            "Content-Type": "text/csv",
+            "Content-Disposition": "attachment; filename=processed_data.csv"
+        }
+    )
+
 if __name__ == "__main__":
     app.run(debug=True)

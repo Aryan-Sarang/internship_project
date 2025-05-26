@@ -97,19 +97,15 @@ def get_graph_data():
         if not file_path or not os.path.exists(file_path):
             return jsonify({"success": False, "message": "No uploaded file found."}), 404
 
-        # Process the file to extract data
         adjusted_times, tokens, order_quantities, actions = [], [], [], []
 
         with open(file_path, "r", encoding="utf-8", errors="replace") as file:
             for line_num, line in enumerate(file, 1):
-                print(f"Line {line_num}: {line.strip()}")  # Debug: Print each line
                 columns = line.strip().split(",")
                 if len(columns) < 8:
-                    print(f"Skipping line {line_num}: Not enough columns")
                     continue
                 try:
-                    raw_epoch_time = int(columns[5])  # 7th value (index 6)
-                    print(f"Raw Epoch Time: {raw_epoch_time}")  # Debug: Print raw epoch time
+                    raw_epoch_time = int(columns[5])
                     if raw_epoch_time > 1e18:
                         epoch_time = (raw_epoch_time + 315532800000000000) / 1e9
                     elif raw_epoch_time > 1e15:
@@ -121,21 +117,21 @@ def get_graph_data():
 
                     adjusted_time = pd.to_datetime(epoch_time, unit="s", origin="unix", utc=True)
                     adjusted_time = adjusted_time.tz_convert("Asia/Calcutta")
-                    print(f"Adjusted Time: {adjusted_time}")  # Debug: Print adjusted time
-                except (ValueError, IndexError) as e:
-                    print(f"Error processing epoch time: {e}")  # Debug: Print error
+                except (ValueError, IndexError):
                     continue
 
-                token = columns[1].strip()  # Token (2nd value, index 1)
-                order_quantity = float(columns[-1])  # Quantity (last value)
-                action = columns[0].strip()  # Action (1st value, index 0)
+                token = columns[1].strip()
+                try:
+                    order_quantity = float(columns[-1].strip())
+                except ValueError:
+                    continue
+                action = columns[0].strip()
 
                 adjusted_times.append(adjusted_time)
                 tokens.append(token)
                 order_quantities.append(order_quantity)
                 actions.append(action)
 
-        # Create a DataFrame from the extracted data
         df = pd.DataFrame({
             "adjusted_time": adjusted_times,
             "token": tokens,
@@ -143,62 +139,55 @@ def get_graph_data():
             "action": actions
         })
 
-        print("DataFrame Before Filtering:\n", df.head())  # Debug: Print the first few rows
-
-        # Convert adjusted_time to datetime
-        df["adjusted_time"] = pd.to_datetime(df["adjusted_time"], errors="coerce")
-        print("Adjusted Time Conversion:\n", df["adjusted_time"].head())  # Debug: Check adjusted_time column
-        df.dropna(subset=["adjusted_time"], inplace=True)
-        print("DataFrame After Adjusted Time Filtering:\n", df.head())  # Debug: Check DataFrame after filtering
-
-        # Convert order_quantity to numeric
+        df["token"] = df["token"].astype(str).str.strip()
         df["order_quantity"] = pd.to_numeric(df["order_quantity"], errors="coerce")
-        print("Order Quantity Conversion:\n", df["order_quantity"].head())  # Debug: Check order_quantity column
-        df.dropna(subset=["order_quantity"], inplace=True)
-        print("DataFrame After Order Quantity Filtering:\n", df.head())  # Debug: Check DataFrame after filtering
-
-        # Add an "hour" column for grouping by hour
+        df.dropna(subset=["order_quantity", "adjusted_time"], inplace=True)
+        df["adjusted_time"] = pd.to_datetime(df["adjusted_time"], errors="coerce")
+        df.dropna(subset=["adjusted_time"], inplace=True)
         df["hour"] = df["adjusted_time"].dt.floor("H")
 
-        # Prepare data for JSON response
         entries_per_hour = (
-            df.groupby(df["adjusted_time"].dt.floor("H"))
+            df.groupby("hour")
             .size()
-            .sort_index()  # Sort by time (left side)
+            .sort_index()
             .to_dict()
         )
+
         quantity_per_hour = (
-            df.groupby(df["adjusted_time"].dt.floor("H"))["order_quantity"]
-            .sum()
-            .sort_values(ascending=False)  # Sort by quantity (right side)
-            .to_dict()
-        )
-        top_tokens_by_quantity = dict(
-            df.groupby("token")["order_quantity"]
+            df.groupby("hour")["order_quantity"]
             .sum()
             .sort_values(ascending=False)
-            .head(5)
+            .to_dict()
         )
-        print("Top Tokens by Quantity Output:", top_tokens_by_quantity)  # Debug
 
         quantity_per_token = (
             df.groupby("token")["order_quantity"]
             .sum()
-            .sort_values(ascending=False)  # Sort by quantity (right side)
+            .sort_values(ascending=False)
             .to_dict()
         )
 
+        # 🆕 New logic: Count number of orders per token
+        token_counts = (
+            df["token"]
+            .value_counts()
+            .to_dict()
+        )
+
+        # Prepare response data
         graph_data = {
             "entries_per_hour": {str(k): v for k, v in entries_per_hour.items()},
             "quantity_per_hour": {str(k): v for k, v in quantity_per_hour.items()},
-            "top_tokens_by_quantity": top_tokens_by_quantity,
             "quantity_per_token": quantity_per_token,
+            "token_counts": token_counts  # ✅ Included new field
         }
 
         return jsonify({"success": True, "data": graph_data}), 200
+
     except Exception as e:
         print(f"Error in /api/graph-data: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
+     
 
 def create_plot(df, x_data, y_data, title, xlabel, ylabel, filename, color='#1f77b4', marker='o', 
                 linewidth=2, label=None, legend_needed=False, more_series=None):
@@ -354,6 +343,10 @@ def process_file_and_generate_graphs(file_path):
     print("DataFrame After Adjusted Time Filtering:\n", df.head())  # Debug: Check DataFrame after filtering
     df["hour"] = df["adjusted_time"].dt.floor("H")
 
+    df["hour"] = pd.to_datetime(df["hour"], errors="coerce")
+    df["order_quantity"] = pd.to_numeric(df["order_quantity"], errors="coerce")
+    df.dropna(subset=["hour", "order_quantity"], inplace=True)
+
     entries_per_hour = df.groupby("hour").size()
     print("Entries Per Hour:\n", entries_per_hour)  # Debug: Print entries per hour
 
@@ -363,7 +356,14 @@ def process_file_and_generate_graphs(file_path):
     # Graph 1: Number of Entries per Hour
     entries_per_hour = df.groupby("hour").size()
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=entries_per_hour.index, y=entries_per_hour.values, mode='lines+markers', name='Entries'))
+    fig.add_trace(go.Scatter(
+        x=entries_per_hour.index,
+        y=entries_per_hour.values,
+        mode='lines+markers+text',
+        name='Entries',
+        text=entries_per_hour.values,
+        textposition="top center"
+    ))
     fig.update_layout(title="Number of Entries per Hour", xaxis_title="Time", yaxis_title="Number of Entries")
     fig.write_html(os.path.join(GRAPH_FOLDER, "entries_per_hour.html"))
     fig.write_image(os.path.join(GRAPH_FOLDER, "entries_per_hour.png"))
@@ -371,7 +371,14 @@ def process_file_and_generate_graphs(file_path):
     # Graph 2: Total Order Quantity per Hour
     quantity_per_hour = df.groupby("hour")["order_quantity"].sum()
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=quantity_per_hour.index, y=quantity_per_hour.values, mode='lines+markers', name='Quantity'))
+    fig.add_trace(go.Scatter(
+        x=quantity_per_hour.index,
+        y=quantity_per_hour.values,
+        mode='lines+markers+text',
+        name='Quantity',
+        text=quantity_per_hour.values,
+        textposition="top center"
+    ))
     fig.update_layout(title="Total Order Quantity per Hour", xaxis_title="Time", yaxis_title="Total Order Quantity")
     fig.write_html(os.path.join(GRAPH_FOLDER, "order_quantity_per_hour.html"))
     fig.write_image(os.path.join(GRAPH_FOLDER, "order_quantity_per_hour.png"))
@@ -384,7 +391,13 @@ def process_file_and_generate_graphs(file_path):
     if combo_hours:
         combo_series = pd.Series(combo_hours).value_counts().sort_index()
         fig = go.Figure()
-        fig.add_trace(go.Bar(x=combo_series.index, y=combo_series.values, name='T to N/M Combinations'))
+        fig.add_trace(go.Bar(
+            x=combo_series.index,
+            y=combo_series.values,
+            name='T to N/M Combinations',
+            text=combo_series.values,
+            textposition="outside"
+        ))
         fig.update_layout(title="T to N/M Combination Count per Hour", xaxis_title="Time", yaxis_title="T to N/M Combinations")
         fig.write_html(os.path.join(GRAPH_FOLDER, "t_nm_combo_count_per_hour.html"))
         fig.write_image(os.path.join(GRAPH_FOLDER, "t_nm_combo_count_per_hour.png"))
@@ -394,24 +407,56 @@ def process_file_and_generate_graphs(file_path):
     df_top_tokens = df[df["token"].isin(top_5_tokens)]
     if not df_top_tokens.empty:
         orders_per_hour = df_top_tokens.groupby(["hour", "token"]).size().unstack(fill_value=0).sort_index()
-        fig = px.line(orders_per_hour, x=orders_per_hour.index, y=orders_per_hour.columns, title="Top 5 Tokens by Number of Orders Per Hour")
+        fig = px.line(
+            orders_per_hour,
+            x=orders_per_hour.index,
+            y=orders_per_hour.columns,
+            title="Top 5 Tokens by Number of Orders Per Hour"
+        )
+        # Annotate values
+        for token in orders_per_hour.columns:
+            fig.add_scatter(
+                x=orders_per_hour.index,
+                y=orders_per_hour[token],
+                mode="text",
+                text=orders_per_hour[token],
+                textposition="top center",
+                showlegend=False
+            )
         fig.update_layout(xaxis_title="Time", yaxis_title="Number of Orders")
         fig.write_html(os.path.join(GRAPH_FOLDER, "top_5_tokens_orders_per_hour.html"))
         fig.write_image(os.path.join(GRAPH_FOLDER, "top_5_tokens_orders_per_hour.png"))
 
-    # Graph 5: Top 5 Tokens by Quantity Traded per Hour
+    # Graph 5: Top 5 Tokens by Quantity Traded per Hour (with zeros for missing)
     top_5_qty_tokens = df.groupby("token")["order_quantity"].sum().nlargest(5).index.tolist()
-    print("Top 5 Tokens by Quantity:", top_5_qty_tokens)  # Debug: Check top 5 tokens
-
     df_top_qty = df[df["token"].isin(top_5_qty_tokens)]
-    print("DataFrame for Top 5 Tokens by Quantity:\n", df_top_qty.head())  # Debug: Check filtered DataFrame
-
-    if not df_top_qty.empty:
-        qty_per_hour = df_top_qty.groupby(["hour", "token"])["order_quantity"].sum().unstack(fill_value=0).sort_index()
-        fig = px.line(qty_per_hour, x=qty_per_hour.index, y=qty_per_hour.columns, title="Top 5 Tokens by Total Quantity Per Hour")
-        fig.update_layout(xaxis_title="Time", yaxis_title="Total Quantity")
-        fig.write_html(os.path.join(GRAPH_FOLDER, "top_5_tokens_quantity_per_hour.html"))
-        fig.write_image(os.path.join(GRAPH_FOLDER, "top_5_tokens_quantity_per_hour.png"))
+    all_hours = df["hour"].sort_values().unique()
+    multi_index = pd.MultiIndex.from_product([all_hours, top_5_qty_tokens], names=["hour", "token"])
+    qty_per_hour = (
+        df_top_qty.groupby(["hour", "token"])["order_quantity"].sum()
+        .reindex(multi_index, fill_value=0)
+        .unstack(fill_value=0)
+        .sort_index()
+    )
+    fig = px.line(
+        qty_per_hour,
+        x=qty_per_hour.index,
+        y=qty_per_hour.columns,
+        title="Top 5 Tokens by Total Quantity Per Hour"
+    )
+    # Annotate values
+    for token in qty_per_hour.columns:
+        fig.add_scatter(
+            x=qty_per_hour.index,
+            y=qty_per_hour[token],
+            mode="text",
+            text=qty_per_hour[token],
+            textposition="top center",
+            showlegend=False
+        )
+    fig.update_layout(xaxis_title="Time", yaxis_title="Total Quantity")
+    fig.write_html(os.path.join(GRAPH_FOLDER, "top_5_tokens_quantity_per_hour.html"))
+    fig.write_image(os.path.join(GRAPH_FOLDER, "top_5_tokens_quantity_per_hour.png"))
 
     # Graph 6: Pie Chart of Number of Entries for Each Unique Token
     entries_per_token = df["token"].value_counts()
@@ -479,6 +524,73 @@ def process_file_and_generate_graphs(file_path):
     fig.write_image(os.path.join(GRAPH_FOLDER, "total_quantity_per_token_pie.png"))
 
     print(f"\n✅ File processing completed in {time.time() - start_time:.2f} seconds.")
+
+@app.route("/export-processed-data", methods=["GET"])
+def export_processed_data():
+    # Find the latest uploaded file
+    file_path = None
+    for file in os.listdir(UPLOAD_FOLDER):
+        file_path = os.path.join(UPLOAD_FOLDER, file)
+        break
+
+    if not file_path or not os.path.exists(file_path):
+        return "No processed data available.", 404
+
+    # Re-process the file to ensure it's clean (or load from where you save processed data)
+    adjusted_times, tokens, order_quantities, actions = [], [], [], []
+    with open(file_path, "r", encoding="utf-8", errors="replace") as file:
+        for line_num, line in enumerate(file, 1):
+            columns = line.strip().split(",")
+            if len(columns) < 8:
+                continue
+            try:
+                raw_epoch_time = int(columns[5])
+                if raw_epoch_time > 1e18:
+                    epoch_time = (raw_epoch_time + 315532800000000000) / 1e9
+                elif raw_epoch_time > 1e15:
+                    epoch_time = (raw_epoch_time + 315532800000000) / 1e6
+                elif raw_epoch_time > 1e12:
+                    epoch_time = (raw_epoch_time + 315532800000) / 1e3
+                else:
+                    epoch_time = raw_epoch_time + 315532800
+                adjusted_time = pd.to_datetime(epoch_time, unit="s", origin="unix", utc=True)
+                adjusted_time = adjusted_time.tz_convert("Asia/Calcutta")
+            except (ValueError, IndexError):
+                continue
+
+            token = columns[1].strip()
+            try:
+                order_quantity = float(columns[-1].strip())
+            except ValueError:
+                continue
+            action = columns[0].strip()
+
+            adjusted_times.append(adjusted_time)
+            tokens.append(token)
+            order_quantities.append(order_quantity)
+            actions.append(action)
+
+    df = pd.DataFrame({
+        "adjusted_time": adjusted_times,
+        "token": tokens,
+        "order_quantity": order_quantities,
+        "action": actions
+    })
+    df["hour"] = df["adjusted_time"].dt.floor("H")
+
+    # Export as CSV
+    from io import StringIO
+    csv_buffer = StringIO()
+    df.to_csv(csv_buffer, index=False)
+    csv_buffer.seek(0)
+    return (
+        csv_buffer.getvalue(),
+        200,
+        {
+            "Content-Type": "text/csv",
+            "Content-Disposition": "attachment; filename=processed_data.csv"
+        }
+    )
 
 if __name__ == "__main__":
     app.run(debug=True)
