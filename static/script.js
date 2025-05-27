@@ -87,14 +87,18 @@ document.addEventListener('DOMContentLoaded', () => {
             })
             .then(response => response.json())
             .then(data => {
-                if (data.success) {
-                    window.location.href = '/graphs';
+                mainContainer.classList.remove('blur');
+                loadingOverlay.classList.add('hidden');
+                if (data.success && data.files && data.files.length > 0) {
+                    const filename = data.files[0];
+                    window.location.href = `/graphs?file=${encodeURIComponent(filename)}`;
                 } else {
-                    showToast(data.message || "An error occurred during upload.");
+                    alert(data.message || "An error occurred during upload.");
                 }
             })
             .catch(error => {
-                console.error('Upload error:', error);
+                mainContainer.classList.remove('blur');
+                loadingOverlay.classList.add('hidden');
                 showToast("An unexpected error occurred during upload.");
             });
         });
@@ -200,4 +204,139 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     });
+
+    const uploadForm = document.getElementById('uploadForm');
+    if (uploadForm) {
+        uploadForm.onsubmit = function(e) {
+            e.preventDefault();
+            showLoading();
+            const files = document.getElementById('fileInput').files;
+            const formData = new FormData();
+            for (let file of files) formData.append('file', file);
+            fetch('/upload', { method: 'POST', body: formData })
+                .then(res => res.json())
+                .then(data => {
+                    hideLoading();
+                    if (data.success) {
+                        data.files.forEach(filename => renderFileComponent(filename));
+                    }
+                })
+                .catch(() => hideLoading());
+        };
+    }
+
+    function renderFileComponent(filename) {
+        showLoading();
+        fetch(`/api/graph-data?file=${encodeURIComponent(filename)}`)
+            .then(res => res.json())
+            .then(data => {
+                const container = document.createElement('div');
+                container.className = 'file-output';
+                container.style = "border:1px solid #ccc; margin:30px 0; padding:20px; border-radius:8px;";
+                container.innerHTML = `<h3>${filename}</h3>`;
+                if (!data.success) {
+                    container.innerHTML += `<p style="color:red;">${data.message}</p>`;
+                } else {
+                    container.innerHTML += `
+                        <h4>JSON Output</h4>
+                        <div>
+                            ${renderGraphDataOutput(data.data, filename)}
+                            <a href="/export-processed-data?file=${encodeURIComponent(filename)}" class="analyze-btn" download>⬇️ Export Processed Data (CSV)</a>
+                        </div>
+                    `;
+                }
+                document.getElementById('allGraphOutputs').appendChild(container);
+                hideLoading();
+            })
+            .catch(() => {
+                hideLoading();
+            });
+    }
+
+    function showLoading() {
+        document.getElementById('loadingOverlay').classList.remove('hidden');
+    }
+
+    function hideLoading() {
+        document.getElementById('loadingOverlay').classList.add('hidden');
+    }
+
+    const initialFile = getQueryParam('file');
+    if (initialFile) {
+        renderFileComponent(initialFile);
+    } else {
+        hideLoading();
+    }
 });
+
+function renderGraphDataOutput(data, filename) {
+    // Top 5 tokens by order count
+    const topOrderTokens = Object.entries(data.token_counts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5);
+
+    // Top 5 tokens by quantity
+    const topQtyTokens = Object.entries(data.quantity_per_token)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5);
+
+    // Entries per hour table
+    const entriesPerHourRows = Object.entries(data.entries_per_hour)
+        .map(([hour, count]) =>
+            `<tr><td>${hour}</td><td>${count}</td></tr>`
+        ).join('');
+
+    // Quantity per hour table
+    const qtyPerHourRows = Object.entries(data.quantity_per_hour)
+        .map(([hour, qty]) =>
+            `<tr><td>${hour}</td><td>${qty}</td></tr>`
+        ).join('');
+
+    return `
+        <div style="margin-bottom:30px;">
+            <h4>Top 5 Tokens by Number of Orders</h4>
+            <table style="border-collapse:collapse;margin-bottom:20px;">
+                <thead>
+                    <tr><th>Token</th><th>Order Count</th></tr>
+                </thead>
+                <tbody>
+                    ${topOrderTokens.map(([token, count]) =>
+                        `<tr><td>${token}</td><td>${count}</td></tr>`
+                    ).join('')}
+                </tbody>
+            </table>
+
+            <h4>Top 5 Tokens by Total Quantity</h4>
+            <table style="border-collapse:collapse;margin-bottom:20px;">
+                <thead>
+                    <tr><th>Token</th><th>Total Quantity</th></tr>
+                </thead>
+                <tbody>
+                    ${topQtyTokens.map(([token, qty]) =>
+                        `<tr><td>${token}</td><td>${qty}</td></tr>`
+                    ).join('')}
+                </tbody>
+            </table>
+
+            <h4>Entries Per Hour</h4>
+            <table style="border-collapse:collapse;margin-bottom:20px;">
+                <thead>
+                    <tr><th>Hour</th><th>Entries</th></tr>
+                </thead>
+                <tbody>
+                    ${entriesPerHourRows}
+                </tbody>
+            </table>
+
+            <h4>Quantity Per Hour</h4>
+            <table style="border-collapse:collapse;">
+                <thead>
+                    <tr><th>Hour</th><th>Total Quantity</th></tr>
+                </thead>
+                <tbody>
+                    ${qtyPerHourRows}
+                </tbody>
+            </table>
+        </div>
+    `;
+}

@@ -13,6 +13,8 @@ from pytz import timezone
 import plotly.graph_objects as go
 import plotly.express as px
 from collections import OrderedDict
+from werkzeug.utils import secure_filename
+import uuid
 
 # Add a lock for matplotlib operations
 matplotlib_lock = threading.Lock()
@@ -40,23 +42,18 @@ def reset_app():
     return redirect("/")
 
 @app.route("/upload", methods=["POST"])
-def upload_file():
-    if "file" not in request.files:
-        return jsonify({"success": False, "message": "No file part"}), 400
-
-    file = request.files["file"]
-    if file.filename == "":
-        return jsonify({"success": False, "message": "No selected file"}), 400
-
-    file_path = os.path.join(app.config["UPLOAD_FOLDER"], file.filename)
-    file.save(file_path)
-
-    try:
-        process_file_and_generate_graphs(file_path)
-        return jsonify({"success": True, "message": "File processed successfully."}), 200
-    except Exception as e:
-        print(f"Exception occurred: {e}")
-        return jsonify({"success": False, "message": f"Error processing file: {str(e)}"}), 500
+def upload_files():
+    uploaded_files = request.files.getlist("file")
+    saved_files = []
+    for file in uploaded_files:
+        if file and file.filename:
+            filename = secure_filename(file.filename)
+            unique_name = f"{uuid.uuid4()}_{filename}"
+            file_path = os.path.join(UPLOAD_FOLDER, unique_name)
+            file.save(file_path)
+            process_file_and_generate_graphs(file_path)
+            saved_files.append(unique_name)
+    return jsonify({"success": True, "files": saved_files})
 
 @app.route("/graphs")
 def show_graphs():
@@ -87,16 +84,14 @@ def delete_uploads():
 
 @app.route("/api/graph-data", methods=["GET"])
 def get_graph_data():
+    filename = request.args.get("file")
+    if not filename:
+        return jsonify({"success": False, "message": "No file specified."}), 400
+    file_path = os.path.join(UPLOAD_FOLDER, filename)
+    if not os.path.exists(file_path):
+        return jsonify({"success": False, "message": "File not found."}), 404
     try:
         # Load the processed data from the latest uploaded file
-        file_path = None
-        for file in os.listdir(UPLOAD_FOLDER):
-            file_path = os.path.join(UPLOAD_FOLDER, file)
-            break
-
-        if not file_path or not os.path.exists(file_path):
-            return jsonify({"success": False, "message": "No uploaded file found."}), 404
-
         adjusted_times, tokens, order_quantities, actions = [], [], [], []
 
         with open(file_path, "r", encoding="utf-8", errors="replace") as file:
